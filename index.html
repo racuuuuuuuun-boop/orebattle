@@ -1,287 +1,479 @@
 <!doctype html>
+<!-- オレバトル (c) 2026 Clauto. 無断複製・再配布を禁じます。 -->
 <html lang="ja">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>オレバトル — 動きの再現デモ</title>
+<meta name="robots" content="noindex, nofollow">
+<title>オレバトル</title>
 <style>
-  :root { --bg:#101418; --panel:#1a2129; --text:#e8eef4; --sub:#8fa0b0; --accent:#4fd1ff; --warn:#ffb454; }
+  :root { --bg:#0e1216; --panel:#1a2129; --text:#e8eef4; --sub:#8fa0b0; --a:#4fd1ff; --b:#ff8a5c; --warn:#ffb454; --ok:#6ee7a0; }
   * { box-sizing:border-box; margin:0; padding:0; }
   body { background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,"Segoe UI","Hiragino Sans","Yu Gothic UI",sans-serif; min-height:100vh; }
-  header { padding:16px 20px 8px; }
-  header h1 { font-size:20px; letter-spacing:.04em; }
-  header p { color:var(--sub); font-size:12px; margin-top:2px; }
-  main { max-width:560px; margin:0 auto; padding:12px 16px 40px; }
-  section { margin-top:12px; }
-  .card { background:var(--panel); border-radius:14px; padding:18px; }
-  .lead { font-size:14px; line-height:1.8; }
-  .note { color:var(--sub); font-size:12px; margin-top:10px; line-height:1.6; }
-  .bigbtn { display:block; text-align:center; background:var(--accent); color:#062434; font-weight:700; font-size:16px; border:none; border-radius:12px; padding:16px; margin-top:16px; width:100%; cursor:pointer; }
-  .bigbtn:active { transform:scale(.98); }
-  button.sub { background:#2a3542; color:var(--text); border:none; border-radius:10px; padding:10px 14px; font-size:14px; cursor:pointer; }
-  progress { width:100%; height:10px; margin-top:12px; accent-color:var(--accent); }
-  #status { font-size:14px; line-height:1.7; }
-  #cv { width:100%; border-radius:14px; background:#0a0d10; display:block; }
-  .controls { display:flex; gap:10px; align-items:center; margin-top:10px; flex-wrap:wrap; }
-  .controls label { font-size:13px; color:var(--sub); display:flex; align-items:center; gap:4px; }
-  .verify { margin-top:12px; background:var(--panel); border-radius:12px; padding:12px 14px; font-size:12.5px; line-height:1.9; color:var(--sub); }
+  header { padding:14px 18px 6px; }
+  header h1 { font-size:19px; letter-spacing:.04em; }
+  header p { color:var(--sub); font-size:11.5px; margin-top:2px; }
+  main { max-width:560px; margin:0 auto; padding:10px 14px 40px; }
+  .card { background:var(--panel); border-radius:14px; padding:14px; margin-top:10px; }
+  .slot h2 { font-size:14px; margin-bottom:8px; display:flex; align-items:center; gap:7px; }
+  .dot { width:11px; height:11px; border-radius:50%; display:inline-block; }
+  .dotA { background:var(--a); } .dotB { background:var(--b); }
+  .slotrow { display:flex; gap:12px; align-items:center; }
+  .prev { width:96px; height:112px; border-radius:10px; background:#0a0d10; flex:0 0 auto; }
+  .slotbody { flex:1; min-width:0; }
+  .slotname { font-size:13px; color:var(--sub); margin-bottom:8px; line-height:1.5; word-break:break-word; }
+  .btns { display:flex; gap:7px; flex-wrap:wrap; }
+  button, .filebtn { background:#2a3542; color:var(--text); border:none; border-radius:9px; padding:9px 12px; font-size:13px; cursor:pointer; font-family:inherit; }
+  button:active, .filebtn:active { transform:scale(.97); }
+  select { background:#2a3542; color:var(--text); border:none; border-radius:9px; padding:9px 10px; font-size:13px; font-family:inherit; }
+  .go { display:block; width:100%; background:var(--a); color:#06232f; font-weight:700; font-size:17px; padding:15px; border-radius:12px; margin-top:12px; }
+  .go:disabled { background:#2a3542; color:#5d6b78; cursor:default; }
+  .hpwrap { display:flex; gap:10px; align-items:center; margin-bottom:4px; font-size:12px; }
+  .hpbar { flex:1; height:13px; background:#2a3542; border-radius:7px; overflow:hidden; }
+  .hpfill { height:100%; width:100%; transition:width .12s linear; }
+  .hpA { background:var(--a); } .hpB { background:var(--b); }
+  #cv { width:100%; border-radius:12px; background:#0a0d10; display:block; margin-top:8px; }
+  #result { text-align:center; font-size:22px; font-weight:700; margin-top:10px; min-height:30px; }
+  .verify { margin-top:10px; background:var(--panel); border-radius:12px; padding:11px 13px; font-size:12px; line-height:1.85; color:var(--sub); }
   .verify b { color:var(--text); }
-  .verify .ok { color:var(--accent); }
-  .verify .bad { color:var(--warn); }
+  .verify .g { color:var(--ok); } .verify .w { color:var(--warn); }
+  .note { color:var(--sub); font-size:11.5px; margin-top:9px; line-height:1.6; }
+  progress { width:100%; height:9px; margin-top:9px; accent-color:var(--a); }
   [hidden] { display:none !important; }
 </style>
 </head>
 <body>
 <header>
   <h1>オレバトル</h1>
-  <p>デモ 段階0「動きの再現」 — 撮った動きを棒人間がそのまま再現します</p>
+  <p>段階1「ぶつかり合い」 — 撮った動きどうしを戦わせます</p>
 </header>
 <main>
-  <section id="step-select" class="card">
-    <p class="lead">5秒くらいの動き（パンチ・キック・ダンス、なんでも）を撮るか、撮ってある動画を選んでください。<b>全身が映っている</b>のがコツです。</p>
-    <label class="bigbtn">動画を選ぶ／撮る<input type="file" id="file" accept="video/*" hidden></label>
-    <p class="note">動画はこの画面の中だけで処理され、どこにも送信されません。10秒より長い動画は最初の10秒だけ使います。</p>
-    <p class="note" id="selmsg" style="color:var(--warn)" hidden></p>
-  </section>
-
-  <section id="step-analyze" class="card" hidden>
-    <div id="status">準備中…</div>
-    <progress id="prog" max="100" value="0"></progress>
-  </section>
-
-  <section id="step-play" hidden>
-    <canvas id="cv"></canvas>
-    <div class="controls">
-      <button class="sub" id="replay">もう一回</button>
-      <label><input type="checkbox" id="loop" checked>くり返し</label>
-      <button class="sub" id="restart">別の動画で試す</button>
+  <section id="setup">
+    <div class="card slot">
+      <h2><span class="dot dotA"></span>1人目</h2>
+      <div class="slotrow">
+        <canvas class="prev" id="prevA"></canvas>
+        <div class="slotbody">
+          <div class="slotname" id="nameA">まだ空です</div>
+          <div class="btns">
+            <label class="filebtn">動画を選ぶ<input type="file" class="pick" data-slot="0" accept="video/*" hidden></label>
+            <select class="samp" data-slot="0"><option value="">サンプルを選ぶ</option></select>
+          </div>
+        </div>
+      </div>
     </div>
-    <div id="verify" class="verify"></div>
-  </section>
-</main>
 
+    <div class="card slot">
+      <h2><span class="dot dotB"></span>2人目</h2>
+      <div class="slotrow">
+        <canvas class="prev" id="prevB"></canvas>
+        <div class="slotbody">
+          <div class="slotname" id="nameB">まだ空です</div>
+          <div class="btns">
+            <label class="filebtn">動画を選ぶ<input type="file" class="pick" data-slot="1" accept="video/*" hidden></label>
+            <select class="samp" data-slot="1"><option value="">サンプルを選ぶ</option></select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <button class="go" id="go" disabled>2人そろったら開始できます</button>
+    <p class="note" id="setupmsg">動画はこの画面の中だけで処理され、どこにも送信されません。5秒くらい・全身が映っているのがコツです。</p>
+    <div class="card" id="analyzing" hidden>
+      <div id="status">準備中…</div>
+      <progress id="prog" max="100" value="0"></progress>
+    </div>
+  </section>
+
+  <section id="battle" hidden>
+    <div class="card">
+      <div class="hpwrap"><span class="dot dotA"></span><div class="hpbar"><div class="hpfill hpA" id="hpA"></div></div><b id="hpAn">100</b></div>
+      <div class="hpwrap"><span class="dot dotB"></span><div class="hpbar"><div class="hpfill hpB" id="hpB"></div></div><b id="hpBn">100</b></div>
+      <canvas id="cv"></canvas>
+      <div id="result"></div>
+      <div class="btns" style="margin-top:10px">
+        <button id="again">もう一回</button>
+        <button id="back">組み合わせを変える</button>
+      </div>
+    </div>
+  </section>
+
+  <div class="verify" id="verify" hidden></div>
+</main>
 <video id="vid" playsinline muted preload="auto" hidden></video>
 
 <script type="module">
 import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
 
 const $ = id => document.getElementById(id);
-const stepSelect = $("step-select"), stepAnalyze = $("step-analyze"), stepPlay = $("step-play");
-const statusEl = $("status"), prog = $("prog"), vid = $("vid"), cv = $("cv"), ctx = cv.getContext("2d");
 
-const FPS = 30;          // 解析の間隔（1秒あたりのコマ数）
-const MAX_SEC = 10;      // 使う長さの上限
-const VIS_MIN = 0.3;     // これ未満の関節は描かない
+/* ===== 調整つまみ（面白さはここで決まる。長さの単位は「胴体1つ分」） ===== */
+const FPS = 30;         // 解析と計算のコマ数
+const MAX_SEC = 12;     // 1試合の上限（秒）
+const HP0 = 100;        // 体力
+const HIT_R = 0.58;     // 当たったと判定する距離
+const MIN_SPD = 0.032;  // これより遅い動きは当たらない（触っただけでは減らない）
+const DMG_K = 170;      // 速さ→ダメージの倍率
+const DMG_MAX = 22;     // 1発の上限
+const KB_K = 3.2;       // 吹っ飛びの強さ
+const COOL = 9;         // 同じ手足が続けて当たらない間隔（コマ）
+const BASE_X = 0.82;    // 立ち位置（中心からの距離）※遠いと拳が届かない
+const B_PHASE = 0.4;    // 2人目の動き出しをずらす割合（同じ動きどうしが完全同時にならないように）
+const VIS = 0.3;        // 関節を信用する最低スコア
 
-let landmarker = null, delegate = "GPU";
-let frames = [], videoAspect = 9 / 16, procSec = 0;
-let playing = false, playStart = 0;
+const STRIKE = [15, 16, 27, 28];   // 当てる側: 両手首・両足首
+const TARGET = [0, 33, 34];        // 当たる側: 頭・胸・腹（33/34は計算で作る点）
+const BONES = [[11,12],[11,23],[12,24],[23,24],[11,13],[13,15],[12,14],[14,16],
+               [23,25],[25,27],[24,26],[26,28],[27,29],[29,31],[28,30],[30,32]];
 
-// ---- AIモデルの読み込み（GPUで失敗したらCPUに切り替え） ----
-async function initModel() {
-  if (landmarker) return;
-  statusEl.textContent = "AIモデルを読み込み中…（初回は少し時間がかかります）";
-  const vision = await FilesetResolver.forVisionTasks(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
-  const opts = d => ({
-    baseOptions: {
-      modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
-      delegate: d
-    },
-    runningMode: "VIDEO",
-    numPoses: 1
-  });
-  try {
-    landmarker = await PoseLandmarker.createFromOptions(vision, opts("GPU"));
-    delegate = "GPU";
-  } catch (e) {
-    landmarker = await PoseLandmarker.createFromOptions(vision, opts("CPU"));
-    delegate = "CPU";
-  }
+let landmarker = null, delegate = "-";
+const slots = [null, null];
+
+/* ===== サンプルの動き（1人でも試せるように） ===== */
+function basePose() {
+  const P = Array.from({length: 35}, () => [0, 0, 1]);
+  const set = (i, x, y) => P[i] = [x, y, 1];
+  set(0, 0.05, -1.34); set(11, -0.20, -1.00); set(12, 0.20, -0.98);
+  set(13, -0.34, -0.62); set(14, 0.36, -0.60); set(15, -0.30, -0.26); set(16, 0.34, -0.24);
+  set(23, -0.17, 0); set(24, 0.17, 0);
+  set(25, -0.19, 0.74); set(26, 0.21, 0.74); set(27, -0.19, 1.48); set(28, 0.21, 1.48);
+  set(29, -0.25, 1.56); set(30, 0.27, 1.56); set(31, -0.06, 1.60); set(32, 0.08, 1.60);
+  return P;
 }
+function bob(P, k) { for (let i = 0; i < 33; i++) if (P[i]) P[i][1] += k; }
 
-// ---- 動画の指定時刻へ移動（seekedが来ないブラウザ向けに0.5秒で諦める保険つき） ----
-function seek(v, t) {
-  return new Promise(res => {
-    let done = false;
-    const fin = () => { if (!done) { done = true; v.removeEventListener("seeked", fin); res(); } };
-    v.addEventListener("seeked", fin);
-    setTimeout(fin, 500);
-    v.currentTime = Math.min(t, Math.max(0, v.duration - 0.001));
-  });
-}
-const nextFrame = () => new Promise(r => setTimeout(r, 0));   // 画面が隠れていても解析が止まらないようにrAFは使わない
-
-// ---- 解析本体 ----
-async function analyze(file) {
-  stepSelect.hidden = true; stepPlay.hidden = true; stepAnalyze.hidden = false;
-  prog.value = 0;
-  try {
-    await initModel();
-  } catch (e) {
-    statusEl.textContent = "AIモデルの読み込みに失敗しました。電波の良いところでページを開き直してください。（" + e.message + "）";
-    return;
+function samplePunch() {       // ストレート（1秒に1発）
+  const out = [];
+  for (let i = 0; i < 90; i++) {
+    const P = basePose(), e = Math.pow(Math.max(0, Math.sin((i % 30) / 30 * Math.PI)), 2);
+    P[16] = [0.30 + 0.98 * e, -0.92 - 0.06 * e, 1];
+    P[14] = [0.28 + 0.46 * e, -0.80 + 0.02 * e, 1];
+    P[15] = [0.16, -1.02, 1]; P[13] = [-0.12, -0.72, 1];
+    bob(P, 0.03 * e); out.push(P);
   }
-
-  vid.src = URL.createObjectURL(file);
-  await new Promise((res, rej) => {
-    vid.onloadedmetadata = res;
-    vid.onerror = () => rej(new Error("動画を読み込めませんでした"));
-  }).catch(e => { statusEl.textContent = e.message + "。別の動画で試してください。"; });
-  if (!vid.duration) return;
-  if (!isFinite(vid.duration)) {           // 録画直後のwebmは長さ不明のことがある→一度末尾へ飛ばして確定させる
-    await new Promise(res => {
-      const fin = () => { vid.removeEventListener("seeked", fin); res(); };
-      vid.addEventListener("seeked", fin);
-      setTimeout(fin, 1500);
-      vid.currentTime = 1e7;
-    });
-    vid.currentTime = 0;
-    if (!isFinite(vid.duration)) { statusEl.textContent = "この動画は長さを読み取れませんでした。別の動画で試してください。"; return; }
-  }
-
-  videoAspect = vid.videoWidth && vid.videoHeight ? vid.videoWidth / vid.videoHeight : 9 / 16;
-  const dur = Math.min(vid.duration, MAX_SEC);
-  const total = Math.max(1, Math.floor(dur * FPS));
-  frames = [];
-  let lastTs = -1;
-  const t0 = performance.now();
-
-  for (let i = 0; i < total; i++) {
-    const t = i / FPS;
-    await seek(vid, t);
-    let ts = Math.round(t * 1000);
-    if (ts <= lastTs) ts = lastTs + 1;   // タイムスタンプは増え続ける必要がある
-    lastTs = ts;
-    let lm = null;
-    try {
-      const res = landmarker.detectForVideo(vid, ts);
-      if (res.landmarks && res.landmarks[0]) {
-        lm = res.landmarks[0].map(p => [p.x, p.y, p.visibility ?? 1]);
-      }
-    } catch (e) { /* このコマは検出なし扱い */ }
-    frames.push(lm);
-    if (i % 3 === 0) {
-      prog.value = (i / total) * 100;
-      statusEl.textContent = `動きを解析中… ${Math.round((i / total) * 100)}%`;
-      await nextFrame();
-    }
-  }
-  procSec = (performance.now() - t0) / 1000;
-  URL.revokeObjectURL(vid.src);
-
-  const detected = frames.filter(f => f).length;
-  if (detected === 0) {
-    stepAnalyze.hidden = true; stepSelect.hidden = false;
-    const m = $("selmsg");
-    m.textContent = "人の姿を見つけられませんでした。明るい場所で、全身がカメラに入るように撮ってみてください。";
-    m.hidden = false;
-    return;
-  }
-  showPlayer(dur, detected);
+  return out;
 }
-
-// ---- 検証パネル（Gauntlet Loop: 数字で嘘をつけなくする） ----
-function showVerify(dur, detected) {
-  const total = frames.length;
-  const rate = Math.round((detected / total) * 100);
-  const grade = rate >= 90 ? '<span class="ok">◎ きれいに取れています</span>'
-              : rate >= 70 ? '<span class="ok">○ おおむね取れています</span>'
-              : '<span class="bad">⚠ 検出が不安定です。明るい場所で全身が映るように撮り直すと改善します</span>';
-  $("verify").innerHTML =
-    `<b>検証パネル</b><br>` +
-    `長さ: <b>${dur.toFixed(1)}秒</b>（${total}コマ） ／ 検出できたコマ: <b>${detected}</b>（${rate}%）<br>` +
-    `解析時間: <b>${procSec.toFixed(1)}秒</b> ／ 処理: <b>${delegate}</b><br>` + grade;
+function sampleKick() {        // 回し蹴り（1.3秒に1発）
+  const out = [];
+  for (let i = 0; i < 80; i++) {
+    const P = basePose(), e = Math.pow(Math.max(0, Math.sin((i % 40) / 40 * Math.PI)), 2);
+    P[28] = [0.21 + 1.05 * e, 1.48 - 2.28 * e, 1];
+    P[26] = [0.21 + 0.52 * e, 0.74 - 0.92 * e, 1];
+    P[30] = [0.27 + 1.10 * e, 1.56 - 2.30 * e, 1];
+    P[32] = [0.08 + 1.20 * e, 1.60 - 2.26 * e, 1];
+    P[16] = [0.10 - 0.20 * e, -0.30, 1]; P[15] = [-0.34, -0.34, 1];
+    bob(P, 0.10 * e); out.push(P);
+  }
+  return out;
 }
-
-function showPlayer(dur, detected) {
-  stepAnalyze.hidden = true; stepPlay.hidden = false;
-  const w = Math.min(stepPlay.clientWidth || 520, 560);
-  let h = Math.round(w / videoAspect);
-  const maxH = Math.round(window.innerHeight * 0.62);
-  let drawW = w;
-  if (h > maxH) { drawW = Math.round(maxH * videoAspect); h = maxH; }
-  const dpr = window.devicePixelRatio || 1;
-  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
-  cv.style.width = w + "px"; cv.style.height = h + "px";
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  cv._w = w; cv._h = h; cv._drawW = drawW;
-  showVerify(dur, detected);
-  startPlayback();
+function sampleRush() {        // 連打（1秒に3発）
+  const out = [];
+  for (let i = 0; i < 90; i++) {
+    const P = basePose();
+    const eR = Math.pow(Math.max(0, Math.sin((i % 20) / 20 * Math.PI)), 2);
+    const eL = Math.pow(Math.max(0, Math.sin(((i + 10) % 20) / 20 * Math.PI)), 2);
+    P[16] = [0.30 + 0.80 * eR, -0.90 - 0.04 * eR, 1];
+    P[14] = [0.28 + 0.38 * eR, -0.78, 1];
+    P[15] = [0.24 + 0.80 * eL, -0.94 - 0.04 * eL, 1];
+    P[13] = [0.20 + 0.38 * eL, -0.80, 1];
+    out.push(P);
+  }
+  return out;
 }
-
-// ---- 棒人間の描画 ----
-const BONES = [
-  [11,12],[11,23],[12,24],[23,24],           // 胴体
-  [11,13],[13,15],[12,14],[14,16],           // 腕
-  [23,25],[25,27],[24,26],[26,28],           // 脚
-  [27,29],[29,31],[28,30],[30,32]            // 足先
+const SAMPLES = [
+  {id: "punch", name: "サンプル: ストレート", gen: samplePunch},
+  {id: "kick",  name: "サンプル: 回し蹴り",   gen: sampleKick},
+  {id: "rush",  name: "サンプル: 連打",       gen: sampleRush}
 ];
 
-function drawFrame(lm) {
-  const w = cv._w, h = cv._h, drawW = cv._drawW, offX = (w - drawW) / 2;
-  ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = "#0a0d10"; ctx.fillRect(0, 0, w, h);
-  if (!lm) return;
-  const px = p => [offX + p[0] * drawW, p[1] * h];
-  ctx.strokeStyle = "#4fd1ff"; ctx.lineCap = "round";
-  ctx.lineWidth = Math.max(3, drawW / 60);
-  for (const [a, b] of BONES) {
-    if (lm[a][2] < VIS_MIN || lm[b][2] < VIS_MIN) continue;
-    const [x1, y1] = px(lm[a]), [x2, y2] = px(lm[b]);
-    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+/* ===== 動画から動きを取り込む ===== */
+async function initModel() {
+  if (landmarker) return;
+  $("status").textContent = "AIモデルを読み込み中…（初回は少し時間がかかります）";
+  const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+  const opts = d => ({
+    baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task", delegate: d },
+    runningMode: "VIDEO", numPoses: 1
+  });
+  try { landmarker = await PoseLandmarker.createFromOptions(vision, opts("GPU")); delegate = "GPU"; }
+  catch { landmarker = await PoseLandmarker.createFromOptions(vision, opts("CPU")); delegate = "CPU"; }
+}
+const seek = (v, t) => new Promise(res => {
+  let done = false;
+  const fin = () => { if (!done) { done = true; v.removeEventListener("seeked", fin); res(); } };
+  v.addEventListener("seeked", fin); setTimeout(fin, 500);
+  v.currentTime = Math.min(t, Math.max(0, v.duration - 0.001));
+});
+const yieldUI = () => new Promise(r => setTimeout(r, 0));
+
+// 撮った姿勢を「腰が原点・胴体1つ分=1」に揃える（体格と映り方の差を消す）
+function normalize(raw) {
+  const out = []; let last = null;
+  for (const lm of raw) {
+    if (!lm) { out.push(last); continue; }
+    const hL = lm[23], hR = lm[24], sL = lm[11], sR = lm[12];
+    if (hL[2] < VIS || hR[2] < VIS || sL[2] < VIS || sR[2] < VIS) { out.push(last); continue; }
+    const hx = (hL[0] + hR[0]) / 2, hy = (hL[1] + hR[1]) / 2;
+    const sx = (sL[0] + sR[0]) / 2, sy = (sL[1] + sR[1]) / 2;
+    const torso = Math.hypot(sx - hx, sy - hy) || 0.001;
+    const f = lm.map(p => [(p[0] - hx) / torso, (p[1] - hy) / torso, p[2]]);
+    out.push(f); last = f;
   }
-  // 頭: 鼻の位置に、肩幅から決めた大きさの丸
-  if (lm[0][2] >= VIS_MIN && lm[11][2] >= VIS_MIN && lm[12][2] >= VIS_MIN) {
-    const [nx, ny] = px(lm[0]);
-    const [sx1] = px(lm[11]), [sx2] = px(lm[12]);
-    const r = Math.max(6, Math.abs(sx1 - sx2) * 0.35);
-    ctx.beginPath(); ctx.arc(nx, ny - r * 0.3, r, 0, Math.PI * 2); ctx.stroke();
-  }
+  const first = out.find(f => f);
+  if (!first) return null;
+  return out.map(f => f || first);
 }
 
-// ---- 再生 ----
-function startPlayback() {
-  playing = true; playStart = performance.now();
-  let lastGood = null;
-  const tick = () => {
-    if (!playing) return;
-    const elapsed = (performance.now() - playStart) / 1000;
-    let idx = Math.floor(elapsed * FPS);
-    if (idx >= frames.length) {
-      if ($("loop").checked) { playStart = performance.now(); idx = 0; }
-      else { playing = false; return; }
-    }
-    if (frames[idx]) lastGood = frames[idx];
-    drawFrame(lastGood);
-    requestAnimationFrame(tick);
+async function analyzeVideo(file, slot) {
+  $("analyzing").hidden = false; $("prog").value = 0; $("go").disabled = true;
+  try { await initModel(); }
+  catch { $("status").textContent = "AIモデルを読み込めませんでした。電波の良いところで開き直してください。"; return; }
+
+  const vid = $("vid");
+  vid.src = URL.createObjectURL(file);
+  const ok = await new Promise(res => { vid.onloadedmetadata = () => res(true); vid.onerror = () => res(false); });
+  if (!ok || !vid.duration) { $("status").textContent = "この動画は読み込めませんでした。別の動画で試してください。"; return; }
+  if (!isFinite(vid.duration)) {
+    await new Promise(res => { const f = () => { vid.removeEventListener("seeked", f); res(); }; vid.addEventListener("seeked", f); setTimeout(f, 1500); vid.currentTime = 1e7; });
+    vid.currentTime = 0;
+    if (!isFinite(vid.duration)) { $("status").textContent = "この動画は長さを読み取れませんでした。"; return; }
+  }
+
+  const dur = Math.min(vid.duration, 8), total = Math.max(1, Math.floor(dur * FPS));
+  const raw = []; let lastTs = -1; const t0 = performance.now();
+  for (let i = 0; i < total; i++) {
+    await seek(vid, i / FPS);
+    let ts = Math.round(i / FPS * 1000); if (ts <= lastTs) ts = lastTs + 1; lastTs = ts;
+    let lm = null;
+    try {
+      const r = landmarker.detectForVideo(vid, ts);
+      if (r.landmarks && r.landmarks[0]) lm = r.landmarks[0].map(p => [p.x, p.y, p.visibility ?? 1]);
+    } catch {}
+    raw.push(lm);
+    if (i % 3 === 0) { $("prog").value = i / total * 100; $("status").textContent = "動きを解析中… " + Math.round(i / total * 100) + "%"; await yieldUI(); }
+  }
+  URL.revokeObjectURL(vid.src);
+  const secs = (performance.now() - t0) / 1000;
+  const detected = raw.filter(f => f).length;
+  const motion = normalize(raw);
+  $("analyzing").hidden = true;
+
+  if (!motion) {
+    $("setupmsg").innerHTML = '<span style="color:var(--warn)">人の姿を見つけられませんでした。明るい場所で、全身がカメラに入るように撮ってみてください。</span>';
+    refresh(); return;
+  }
+  $("setupmsg").textContent = "動画はこの画面の中だけで処理され、どこにも送信されません。5秒くらい・全身が映っているのがコツです。";
+  slots[slot] = { name: "自分の動画（" + dur.toFixed(1) + "秒）", motion: motion.map(extend), rate: Math.round(detected / total * 100), secs: secs.toFixed(1) };
+  refresh();
+}
+
+/* ===== 試合の計算（同じ入力なら必ず同じ結果になるように作る） ===== */
+function extend(P) {                     // 胸(33)と腹(34)の点をその場で作る
+  const q = P.map(p => p.slice());
+  q[33] = [(q[11][0] + q[12][0]) / 2, (q[11][1] + q[12][1]) / 2, 1];
+  q[34] = [0, 0, 1];
+  return q;
+}
+function simulate(mA, mB) {
+  const F = [
+    { m: mA, base: -BASE_X, dir: 1,  off: 0, hp: HP0, cd: {}, ph: 0 },
+    { m: mB, base:  BASE_X, dir: -1, off: 0, hp: HP0, cd: {}, ph: Math.floor(mB.length * B_PHASE) }
+  ];
+  const pos = (i, j, f) => {
+    const g = F[i], P = g.m[(f + g.ph) % g.m.length];
+    return [g.base + g.off + P[j][0] * g.dir, P[j][1]];
   };
-  requestAnimationFrame(tick);
+  const tl = []; const N = MAX_SEC * FPS;
+  for (let f = 0; f < N; f++) {
+    const hits = [];
+    for (let s = 0; s < 2; s++) {
+      const t = 1 - s;
+      if (F[0].hp <= 0 || F[1].hp <= 0) break;
+      for (const sp of STRIKE) {
+        if ((F[s].cd[sp] || 0) > f) continue;
+        const cur = pos(s, sp, f), prv = pos(s, sp, Math.max(0, f - 1));
+        const spd = Math.hypot(cur[0] - prv[0], cur[1] - prv[1]);
+        if (spd < MIN_SPD) continue;
+        for (const tz of TARGET) {
+          const tp = pos(t, tz, f);
+          if (Math.hypot(cur[0] - tp[0], cur[1] - tp[1]) > HIT_R) continue;
+          const dmg = Math.max(1, Math.min(DMG_MAX, Math.round(spd * DMG_K)));
+          F[t].hp = Math.max(0, F[t].hp - dmg);
+          F[t].off += F[s].dir * Math.min(spd * KB_K, 0.45);
+          F[s].cd[sp] = f + COOL;
+          hits.push({ x: (cur[0] + tp[0]) / 2, y: (cur[1] + tp[1]) / 2, dmg, victim: t });
+          break;
+        }
+      }
+    }
+    for (const g of F) { g.off *= 0.90; g.off = Math.max(-1.25, Math.min(1.25, g.off)); }
+    tl.push({ f, offA: F[0].off, offB: F[1].off, hpA: F[0].hp, hpB: F[1].hp, hits });
+    if (F[0].hp <= 0 || F[1].hp <= 0) break;
+  }
+  const hpA = F[0].hp, hpB = F[1].hp;
+  return { tl, hpA, hpB, ko: hpA <= 0 || hpB <= 0,
+           winner: hpA === hpB ? "draw" : (hpA > hpB ? "A" : "B"),
+           hits: tl.reduce((s, x) => s + x.hits.length, 0) };
 }
 
-// ---- 操作 ----
-$("file").addEventListener("change", e => {
-  $("selmsg").hidden = true;
-  const f = e.target.files[0];
-  if (f) analyze(f);
-  e.target.value = "";
-});
-$("replay").addEventListener("click", () => { playing = false; setTimeout(startPlayback, 50); });
-$("restart").addEventListener("click", () => {
-  playing = false;
-  stepPlay.hidden = true; stepSelect.hidden = false;
-});
+/* ===== 描く ===== */
+const cv = $("cv"), ctx = cv.getContext("2d");
+let SCALE = 60, HIPY = 0, CX = 0;
+function fitCanvas() {
+  const w = Math.min(cv.parentElement.clientWidth, 540), h = Math.round(w * 0.72);
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = w * dpr; cv.height = h * dpr; cv.style.width = w + "px"; cv.style.height = h + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  cv._w = w; cv._h = h; SCALE = h / 3.5; HIPY = h * 0.55; CX = w / 2;
+}
+function drawFigure(P, off, dir, color, shake) {
+  const X = x => CX + (off + x * dir) * SCALE + shake, Y = y => HIPY + y * SCALE;
+  ctx.strokeStyle = color; ctx.lineCap = "round"; ctx.lineWidth = Math.max(3, SCALE / 22);
+  for (const ab of BONES) {
+    const a = ab[0], b = ab[1];
+    if (P[a][2] < VIS || P[b][2] < VIS) continue;
+    ctx.beginPath(); ctx.moveTo(X(P[a][0]), Y(P[a][1])); ctx.lineTo(X(P[b][0]), Y(P[b][1])); ctx.stroke();
+  }
+  if (P[0][2] >= VIS) {
+    const r = SCALE * 0.19;
+    ctx.beginPath(); ctx.arc(X(P[0][0]), Y(P[0][1]) - r * 0.25, r, 0, Math.PI * 2); ctx.stroke();
+  }
+}
+function drawScene(st, mA, mB, fx, shake) {
+  const w = cv._w, h = cv._h;
+  ctx.fillStyle = "#0a0d10"; ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = "#1e2a35"; ctx.lineWidth = 2;
+  const gy = HIPY + 1.62 * SCALE;
+  ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke();
+  const phB = Math.floor(mB.length * B_PHASE);
+  drawFigure(mA[st.f % mA.length], st.offA - BASE_X, 1,  "#4fd1ff", shake);
+  drawFigure(mB[(st.f + phB) % mB.length], st.offB + BASE_X, -1, "#ff8a5c", shake);
+  for (const e of fx) {
+    const a = e.life / 14;
+    ctx.strokeStyle = "rgba(255,255,255," + a + ")"; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(CX + e.x * SCALE + shake, HIPY + e.y * SCALE, (1 - a) * SCALE * 0.55 + 6, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255," + a + ")";
+    ctx.font = "bold " + Math.round(SCALE * 0.28) + "px system-ui"; ctx.textAlign = "center";
+    ctx.fillText(e.dmg, CX + e.x * SCALE + shake, HIPY + e.y * SCALE - (1 - a) * SCALE * 0.5);
+  }
+}
 
-// 検証用フック（開発時のみ使用・アプリの動作には関与しない）
-window.__oreDraw = lm => drawFrame(lm);
-window.__oreTest = (fakeFrames, aspect) => {
-  frames = fakeFrames; videoAspect = aspect || 9 / 16; procSec = 0;
-  stepSelect.hidden = true; stepAnalyze.hidden = true;
-  showPlayer(fakeFrames.length / FPS, fakeFrames.filter(f => f).length);
-};
+/* ===== 再生 ===== */
+let raf = 0, sim = null;
+function play() {
+  cancelAnimationFrame(raf);
+  const mA = slots[0].motion, mB = slots[1].motion;
+  sim = simulate(mA, mB);
+  fitCanvas();
+  $("result").textContent = "";
+  $("hpA").style.width = "100%"; $("hpB").style.width = "100%";
+  $("hpAn").textContent = HP0; $("hpBn").textContent = HP0;
+  let i = 0, acc = 0, last = performance.now(), freeze = 0, shakeT = 0;
+  const fx = [];
+  const step = now => {
+    const dt = Math.min(now - last, 100); last = now; acc += dt;
+    while (acc >= 1000 / FPS) {
+      acc -= 1000 / FPS;
+      if (freeze > 0) freeze--;
+      else if (i < sim.tl.length) {
+        const st = sim.tl[i];
+        for (const hit of st.hits) { fx.push({ x: hit.x, y: hit.y, dmg: hit.dmg, life: 14 }); freeze = 4; shakeT = 7; }
+        $("hpA").style.width = st.hpA + "%"; $("hpB").style.width = st.hpB + "%";
+        $("hpAn").textContent = st.hpA; $("hpBn").textContent = st.hpB;
+        i++;
+      }
+      for (const e of fx) e.life--;
+      for (let k = fx.length - 1; k >= 0; k--) if (fx[k].life <= 0) fx.splice(k, 1);
+      if (shakeT > 0) shakeT--;
+    }
+    const st = sim.tl[Math.min(i, sim.tl.length - 1)];
+    const shake = shakeT > 0 ? (shakeT % 2 ? 1 : -1) * shakeT * 0.8 : 0;
+    drawScene(st, mA, mB, fx, shake);
+    if (i < sim.tl.length || fx.length) raf = requestAnimationFrame(step);
+    else finish();
+  };
+  raf = requestAnimationFrame(step);
+}
+function finish() {
+  const msg = sim.winner === "draw" ? "引き分け"
+            : (sim.winner === "A" ? "1人目の勝ち" : "2人目の勝ち") + (sim.ko ? "（KO）" : "（判定）");
+  $("result").style.color = sim.winner === "draw" ? "var(--sub)" : (sim.winner === "A" ? "var(--a)" : "var(--b)");
+  $("result").textContent = msg;
+  showVerify();
+}
 
-// ページを開いた時点で裏でモデルを読み始めておく（体感を速くする）
-initModel().catch(() => { /* 選択時にもう一度試す */ });
+/* ===== 検証パネル（数字で嘘をつけなくする） ===== */
+function showVerify() {
+  const v = $("verify"); v.hidden = false;
+  const a = slots[0], b = slots[1];
+  const src = s => s.rate === undefined ? "サンプル" : "検出" + s.rate + "%・解析" + s.secs + "秒";
+  const r2 = simulate(a.motion, b.motion);   // 同じ入力で2回計算し、一致するかを毎回自動チェック
+  const same = r2.hpA === sim.hpA && r2.hpB === sim.hpB && r2.hits === sim.hits;
+  v.innerHTML =
+    "<b>検証パネル</b><br>" +
+    "1人目: " + a.name + "（" + src(a) + "・" + a.motion.length + "コマ）<br>" +
+    "2人目: " + b.name + "（" + src(b) + "・" + b.motion.length + "コマ）<br>" +
+    "試合: <b>" + (sim.tl.length / FPS).toFixed(1) + "秒</b> ／ 命中 <b>" + sim.hits + "回</b> ／ 残り体力 <b>" + sim.hpA + "</b> 対 <b>" + sim.hpB + "</b><br>" +
+    "再現性チェック（同じ入力→同じ結果か）: " + (same ? '<span class="g">◎ 一致</span>' : '<span class="w">⚠ 不一致（要修正）</span>') +
+    " ／ 処理: " + delegate +
+    (sim.hits === 0 ? '<br><span class="w">⚠ 一度も当たっていません。手足を前に伸ばす動き、または速い動きだと当たります</span>' : "");
+}
+
+/* ===== 画面の出し入れ ===== */
+function drawPreview(id, slot, color) {
+  const c = $(id), g = c.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+  if (c.width !== 96 * dpr) { c.width = 96 * dpr; c.height = 112 * dpr; }
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = "#0a0d10"; g.fillRect(0, 0, 96, 112);
+  if (!slot) return;
+  const S = 26, cx = 48, hy = 46;
+  const P = slot.motion[Math.floor(performance.now() / 33) % slot.motion.length];
+  g.strokeStyle = color; g.lineWidth = 2.4; g.lineCap = "round";
+  for (const ab of BONES) {
+    const a = ab[0], b = ab[1];
+    if (P[a][2] < VIS || P[b][2] < VIS) continue;
+    g.beginPath(); g.moveTo(cx + P[a][0] * S, hy + P[a][1] * S); g.lineTo(cx + P[b][0] * S, hy + P[b][1] * S); g.stroke();
+  }
+  if (P[0][2] >= VIS) { g.beginPath(); g.arc(cx + P[0][0] * S, hy + P[0][1] * S - 4, 5, 0, Math.PI * 2); g.stroke(); }
+}
+setInterval(() => {
+  if (!$("setup").hidden) { drawPreview("prevA", slots[0], "#4fd1ff"); drawPreview("prevB", slots[1], "#ff8a5c"); }
+}, 33);
+
+function refresh() {
+  $("nameA").textContent = slots[0] ? slots[0].name : "まだ空です";
+  $("nameB").textContent = slots[1] ? slots[1].name : "まだ空です";
+  const ready = !!(slots[0] && slots[1]);
+  $("go").disabled = !ready;
+  $("go").textContent = ready ? "バトル開始" : "2人そろったら開始できます";
+}
+
+document.querySelectorAll(".samp").forEach(sel => {
+  SAMPLES.forEach(s => sel.add(new Option(s.name, s.id)));
+  sel.addEventListener("change", e => {
+    const s = SAMPLES.find(x => x.id === e.target.value);
+    if (s) { slots[+e.target.dataset.slot] = { name: s.name, motion: s.gen().map(extend) }; refresh(); }
+    e.target.value = "";
+  });
+});
+document.querySelectorAll(".pick").forEach(inp => {
+  inp.addEventListener("change", e => {
+    const f = e.target.files[0], s = +e.target.dataset.slot;
+    e.target.value = "";
+    if (f) analyzeVideo(f, s);
+  });
+});
+$("go").addEventListener("click", () => { $("setup").hidden = true; $("battle").hidden = false; play(); });
+$("again").addEventListener("click", play);
+$("back").addEventListener("click", () => { cancelAnimationFrame(raf); $("battle").hidden = true; $("setup").hidden = false; });
+window.addEventListener("resize", () => { if (!$("battle").hidden) fitCanvas(); });
+
+// 検証用フック（開発時のみ・アプリの動作には関与しない）
+window.__ore = { simulate, SAMPLES, extend, slots, get sim() { return sim; } };
+
+refresh();
+initModel().catch(() => {});
 </script>
 </body>
 </html>
