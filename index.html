@@ -58,6 +58,7 @@
           <div class="btns">
             <label class="filebtn">動画を選ぶ<input type="file" class="pick" data-slot="0" accept="video/*" hidden></label>
             <select class="samp" data-slot="0"><option value="">サンプルを選ぶ</option></select>
+            <select class="ctrl" data-slot="0"><option value="auto">移動: 自動（動画どおり）</option><option value="key">移動: キーボード A / D（PCのみ）</option></select>
           </div>
         </div>
       </div>
@@ -72,6 +73,7 @@
           <div class="btns">
             <label class="filebtn">動画を選ぶ<input type="file" class="pick" data-slot="1" accept="video/*" hidden></label>
             <select class="samp" data-slot="1"><option value="">サンプルを選ぶ</option></select>
+            <select class="ctrl" data-slot="1"><option value="auto">移動: 自動（動画どおり）</option><option value="key">移動: キーボード ← / →（PCのみ）</option></select>
           </div>
         </div>
       </div>
@@ -90,6 +92,9 @@
       <div class="hpwrap"><span class="dot dotA"></span><div class="hpbar"><div class="hpfill hpA" id="hpA"></div></div><b id="hpAn">100</b></div>
       <div class="hpwrap"><span class="dot dotB"></span><div class="hpbar"><div class="hpfill hpB" id="hpB"></div></div><b id="hpBn">100</b></div>
       <canvas id="cv"></canvas>
+      <p class="note" id="keyhint" hidden style="text-align:center;margin-top:6px">
+        <span style="color:var(--a)">1人目 = A / D</span>　　<span style="color:var(--b)">2人目 = ← / →</span>　技は動画のまま自動で出ます
+      </p>
       <div id="result"></div>
       <div class="btns" style="margin-top:10px">
         <button id="again">もう一回</button>
@@ -122,6 +127,10 @@ const B_PHASE = 0.4;    // 2人目の動き出しをずらす割合（同じ動�
 const SWAY_K = 1.0;     // 動画の横移動→前後移動への効き具合
 const MIN_GAP = 0.75;   // これ以上は近づけない（体がめり込まないように）
 const X_LIM = 1.95;     // 画面からはみ出さない上限
+const KEY_SPD = 0.045;  // キーボードで動く速さ（1コマあたり）
+const KEY_LIM = 1.5;    // キーボードで動ける範囲
+const KEY_SEC = 30;     // キーボード操作時の試合時間（秒）
+const READY = 45;       // 開始前の「構えて」の長さ（コマ）
 const VIS = 0.3;        // 関節を信用する最低スコア
 
 const STRIKE = [15, 16, 27, 28];   // 当てる側: 両手首・両足首
@@ -309,55 +318,80 @@ function extend(P) {                     // 胸(33)・腹(34)を作り、足さ�
   if (!P[35]) q[35] = [0, 0, 1];
   return q;
 }
-function simulate(mA, mB) {
-  const F = [
-    { m: mA, base: -BASE_X, dir: 1,  off: 0, hp: HP0, cd: {}, ph: 0 },
-    { m: mB, base:  BASE_X, dir: -1, off: 0, hp: HP0, cd: {}, ph: Math.floor(mB.length * B_PHASE) }
-  ];
-  const frameOf = (g, f) => g.m[(f + g.ph) % g.m.length];
-  const centersAt = f => {                     // 立ち位置 = 足さばき + 吹っ飛び。近すぎたら押し戻す
-    let xA = F[0].base + F[0].off + frameOf(F[0], f)[35][0] * SWAY_K * F[0].dir;
-    let xB = F[1].base + F[1].off + frameOf(F[1], f)[35][0] * SWAY_K * F[1].dir;
-    const gap = xB - xA;
-    if (gap < MIN_GAP) { const c = (MIN_GAP - gap) / 2; xA -= c; xB += c; }
-    return [Math.max(-X_LIM, Math.min(X_LIM, xA)), Math.max(-X_LIM, Math.min(X_LIM, xB))];
-  };
-  const pos = (i, j, f, cx) => [cx + frameOf(F[i], f)[j][0] * F[i].dir, frameOf(F[i], f)[j][1]];
+function newState(mA, mB) {
+  return { F: [
+    { m: mA, base: -BASE_X, dir:  1, off: 0, hp: HP0, cd: {}, ph: 0, key: 0 },
+    { m: mB, base:  BASE_X, dir: -1, off: 0, hp: HP0, cd: {}, ph: Math.floor(mB.length * B_PHASE) , key: 0 }
+  ] };
+}
+const frameOf = (g, f) => g.m[(f + g.ph) % g.m.length];
+
+// 立ち位置 = 足さばき(動画 または キー操作) + 吹っ飛び。近すぎたら押し戻す
+function centersOf(S, f, man) {
+  const sway = i => man[i] ? S.F[i].key : frameOf(S.F[i], f)[35][0] * SWAY_K * S.F[i].dir;
+  let xA = S.F[0].base + S.F[0].off + sway(0);
+  let xB = S.F[1].base + S.F[1].off + sway(1);
+  const gap = xB - xA;
+  if (gap < MIN_GAP) { const c = (MIN_GAP - gap) / 2; xA -= c; xB += c; }
+  return [Math.max(-X_LIM, Math.min(X_LIM, xA)), Math.max(-X_LIM, Math.min(X_LIM, xB))];
+}
+
+// 1コマ進める。ctrl は画面上の左右(-1/0/1)。live=false の間は「構えて」でダメージなし
+function stepSim(S, f, man, ctrl, live) {
+  const F = S.F;
+  for (let i = 0; i < 2; i++) if (man[i] && ctrl[i]) {
+    F[i].key = Math.max(-KEY_LIM, Math.min(KEY_LIM, F[i].key + ctrl[i] * KEY_SPD));
+  }
+  const C = centersOf(S, f, man);
+  const hits = [];
+  const pos = (i, j, ff, cx) => [cx + frameOf(F[i], ff)[j][0] * F[i].dir, frameOf(F[i], ff)[j][1]];
   // 速さは「体に対する手足の速さ」で測る（歩いて近づいただけでは当たらないように）
-  const localP = (i, j, f) => { const P = frameOf(F[i], f); return [P[j][0] * F[i].dir, P[j][1]]; };
-  const tl = []; const N = MAX_SEC * FPS;
-  for (let f = 0; f < N; f++) {
-    const C = centersAt(f);
-    const hits = [];
-    for (let s = 0; s < 2; s++) {
-      const t = 1 - s;
+  const localP = (i, j, ff) => { const P = frameOf(F[i], ff); return [P[j][0] * F[i].dir, P[j][1]]; };
+  if (live) {
+    for (let sd = 0; sd < 2; sd++) {
+      const t = 1 - sd;
       if (F[0].hp <= 0 || F[1].hp <= 0) break;
       for (const sp of STRIKE) {
-        if ((F[s].cd[sp] || 0) > f) continue;
-        const cl = localP(s, sp, f), pl = localP(s, sp, Math.max(0, f - 1));
+        if ((F[sd].cd[sp] || 0) > f) continue;
+        const cl = localP(sd, sp, f), pl = localP(sd, sp, Math.max(0, f - 1));
         const spd = Math.hypot(cl[0] - pl[0], cl[1] - pl[1]);
         if (spd < MIN_SPD) continue;
-        const cur = pos(s, sp, f, C[s]);
+        const cur = pos(sd, sp, f, C[sd]);
         for (const tz of TARGET) {
           const tp = pos(t, tz, f, C[t]);
           if (Math.hypot(cur[0] - tp[0], cur[1] - tp[1]) > HIT_R) continue;
           const dmg = Math.max(1, Math.min(DMG_MAX, Math.round(spd * DMG_K)));
           F[t].hp = Math.max(0, F[t].hp - dmg);
-          F[t].off += F[s].dir * Math.min(spd * KB_K, 0.45);
-          F[s].cd[sp] = f + COOL;
+          F[t].off += F[sd].dir * Math.min(spd * KB_K, 0.45);
+          F[sd].cd[sp] = f + COOL;
           hits.push({ x: (cur[0] + tp[0]) / 2, y: (cur[1] + tp[1]) / 2, dmg, victim: t });
           break;
         }
       }
     }
-    for (const g of F) { g.off *= 0.90; g.off = Math.max(-1.25, Math.min(1.25, g.off)); }
-    tl.push({ f, xA: C[0], xB: C[1], hpA: F[0].hp, hpB: F[1].hp, hits });
-    if (F[0].hp <= 0 || F[1].hp <= 0) break;
   }
-  const hpA = F[0].hp, hpB = F[1].hp;
+  for (const g of F) { g.off *= 0.90; g.off = Math.max(-1.25, Math.min(1.25, g.off)); }
+  return { xA: C[0], xB: C[1], hits, hpA: F[0].hp, hpB: F[1].hp, over: F[0].hp <= 0 || F[1].hp <= 0 };
+}
+
+function totalFrames(man) { return (man[0] || man[1] ? KEY_SEC : MAX_SEC) * FPS; }
+function readyFrames(man) { return (man[0] || man[1]) ? READY : 0; }
+
+// 一気に最後まで計算する（自動どうしの試合／記録した操作の再現チェック用）
+function simulate(mA, mB, man, log) {
+  man = man || [false, false];
+  const S = newState(mA, mB), tl = [];
+  const N = totalFrames(man), ready = readyFrames(man);
+  for (let f = 0; f < N; f++) {
+    const ctrl = log ? (log[f] || [0, 0]) : [0, 0];
+    const st = stepSim(S, f, man, ctrl, f >= ready);
+    tl.push({ f, xA: st.xA, xB: st.xB, hpA: st.hpA, hpB: st.hpB, hits: st.hits });
+    if (st.over) break;
+  }
+  const hpA = S.F[0].hp, hpB = S.F[1].hp;
   return { tl, hpA, hpB, ko: hpA <= 0 || hpB <= 0,
            winner: hpA === hpB ? "draw" : (hpA > hpB ? "A" : "B"),
-           hits: tl.reduce((s, x) => s + x.hits.length, 0) };
+           hits: tl.reduce((a, x) => a + x.hits.length, 0), man: man, log: log || null };
 }
 
 /* ===== 描く ===== */
@@ -402,43 +436,67 @@ function drawScene(st, mA, mB, fx, shake) {
   }
 }
 
-/* ===== 再生 ===== */
-let raf = 0, sim = null;
+/* ===== 再生（キー操作を毎コマ読み、同時に記録する） ===== */
+let raf = 0, sim = null, manual = [false, false];
+const keys = {};
+addEventListener("keydown", e => {
+  keys[e.key.toLowerCase()] = true;
+  if (!$("battle").hidden && ["arrowleft", "arrowright"].includes(e.key.toLowerCase())) e.preventDefault();
+});
+addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
+addEventListener("blur", () => { for (const k in keys) keys[k] = false; });
+const readCtrl = () => [
+  (keys["d"] ? 1 : 0) - (keys["a"] ? 1 : 0),
+  (keys["arrowright"] ? 1 : 0) - (keys["arrowleft"] ? 1 : 0)
+];
+
 function play() {
   cancelAnimationFrame(raf);
   const mA = slots[0].motion, mB = slots[1].motion;
-  sim = simulate(mA, mB);
+  const S = newState(mA, mB), tl = [], log = [];
+  const N = totalFrames(manual), ready = readyFrames(manual);
   fitCanvas();
   $("result").textContent = "";
   $("hpA").style.width = "100%"; $("hpB").style.width = "100%";
   $("hpAn").textContent = HP0; $("hpBn").textContent = HP0;
-  let i = 0, acc = 0, last = performance.now(), freeze = 0, shakeT = 0;
+  $("keyhint").hidden = !(manual[0] || manual[1]);
+  sim = { tl, hpA: HP0, hpB: HP0, ko: false, winner: "draw", hits: 0, man: manual.slice(), log };
+  let f = 0, acc = 0, last = performance.now(), freeze = 0, shakeT = 0, over = false;
   const fx = [];
   const step = now => {
     const dt = Math.min(now - last, 100); last = now; acc += dt;
     while (acc >= 1000 / FPS) {
       acc -= 1000 / FPS;
       if (freeze > 0) freeze--;
-      else if (i < sim.tl.length) {
-        const st = sim.tl[i];
-        for (const hit of st.hits) { fx.push({ x: hit.x, y: hit.y, dmg: hit.dmg, life: 14 }); freeze = 4; shakeT = 7; }
+      else if (!over) {
+        const ctrl = manual[0] || manual[1] ? readCtrl() : [0, 0];
+        log.push(ctrl);
+        const st = stepSim(S, f, manual, ctrl, f >= ready);
+        tl.push({ f, xA: st.xA, xB: st.xB, hpA: st.hpA, hpB: st.hpB, hits: st.hits });
+        for (const h of st.hits) { fx.push({ x: h.x, y: h.y, dmg: h.dmg, life: 14 }); freeze = 4; shakeT = 7; }
         $("hpA").style.width = st.hpA + "%"; $("hpB").style.width = st.hpB + "%";
         $("hpAn").textContent = st.hpA; $("hpBn").textContent = st.hpB;
-        i++;
+        $("result").textContent = f < ready ? "構えて…" : "";
+        f++;
+        if (st.over || f >= N) over = true;
       }
       for (const e of fx) e.life--;
       for (let k = fx.length - 1; k >= 0; k--) if (fx[k].life <= 0) fx.splice(k, 1);
       if (shakeT > 0) shakeT--;
     }
-    const st = sim.tl[Math.min(i, sim.tl.length - 1)];
+    const st = tl.length ? tl[tl.length - 1] : { f: 0, xA: -BASE_X, xB: BASE_X };
     const shake = shakeT > 0 ? (shakeT % 2 ? 1 : -1) * shakeT * 0.8 : 0;
     drawScene(st, mA, mB, fx, shake);
-    if (i < sim.tl.length || fx.length) raf = requestAnimationFrame(step);
-    else finish();
+    if (!over || fx.length) raf = requestAnimationFrame(step);
+    else finish(S);
   };
   raf = requestAnimationFrame(step);
 }
-function finish() {
+function finish(S) {
+  sim.hpA = S.F[0].hp; sim.hpB = S.F[1].hp;
+  sim.ko = sim.hpA <= 0 || sim.hpB <= 0;
+  sim.winner = sim.hpA === sim.hpB ? "draw" : (sim.hpA > sim.hpB ? "A" : "B");
+  sim.hits = sim.tl.reduce((a, x) => a + x.hits.length, 0);
   const msg = sim.winner === "draw" ? "引き分け"
             : (sim.winner === "A" ? "1人目の勝ち" : "2人目の勝ち") + (sim.ko ? "（KO）" : "（判定）");
   $("result").style.color = sim.winner === "draw" ? "var(--sub)" : (sim.winner === "A" ? "var(--a)" : "var(--b)");
@@ -452,14 +510,16 @@ function showVerify() {
   const a = slots[0], b = slots[1];
   const src = s => s.rate === undefined ? "サンプル" : "検出" + s.rate + "%・解析" + s.secs + "秒";
   const swayW = m => { let lo = 9, hi = -9; for (const P of m) { const v = P[35][0]; if (v < lo) lo = v; if (v > hi) hi = v; } return (hi - lo).toFixed(2); };
-  const r2 = simulate(a.motion, b.motion);   // 同じ入力で2回計算し、一致するかを毎回自動チェック
+  // 同じ入力（手動なら記録した操作つき）でもう一度計算し、結果が一致するか毎回自動チェック
+  const r2 = simulate(a.motion, b.motion, sim.man, sim.log);
   const same = r2.hpA === sim.hpA && r2.hpB === sim.hpB && r2.hits === sim.hits;
+  const detLabel = (sim.man[0] || sim.man[1]) ? "再現性チェック（同じ操作→同じ結果か）: " : "再現性チェック（同じ入力→同じ結果か）: ";
   v.innerHTML =
     "<b>検証パネル</b><br>" +
     "1人目: " + a.name + "（" + src(a) + "・" + a.motion.length + "コマ・足さばきの幅 " + swayW(a.motion) + "）<br>" +
     "2人目: " + b.name + "（" + src(b) + "・" + b.motion.length + "コマ・足さばきの幅 " + swayW(b.motion) + "）<br>" +
     "試合: <b>" + (sim.tl.length / FPS).toFixed(1) + "秒</b> ／ 命中 <b>" + sim.hits + "回</b> ／ 残り体力 <b>" + sim.hpA + "</b> 対 <b>" + sim.hpB + "</b><br>" +
-    "再現性チェック（同じ入力→同じ結果か）: " + (same ? '<span class="g">◎ 一致</span>' : '<span class="w">⚠ 不一致（要修正）</span>') +
+    detLabel + (same ? '<span class="g">◎ 一致</span>' : '<span class="w">⚠ 不一致（要修正）</span>') +
     " ／ 処理: " + delegate +
     (sim.hits === 0 ? '<br><span class="w">⚠ 一度も当たっていません。手足を前に伸ばす動き、または速い動きだと当たります</span>' : "");
 }
@@ -502,6 +562,9 @@ document.querySelectorAll(".samp").forEach(sel => {
     e.target.value = "";
   });
 });
+document.querySelectorAll(".ctrl").forEach(sel => {
+  sel.addEventListener("change", e => { manual[+e.target.dataset.slot] = e.target.value === "key"; });
+});
 document.querySelectorAll(".pick").forEach(inp => {
   inp.addEventListener("change", e => {
     const f = e.target.files[0], s = +e.target.dataset.slot;
@@ -515,8 +578,11 @@ $("back").addEventListener("click", () => { cancelAnimationFrame(raf); $("battle
 window.addEventListener("resize", () => { if (!$("battle").hidden) fitCanvas(); });
 
 // 検証用フック（開発時のみ・アプリの動作には関与しない）
-window.__ore = { simulate, SAMPLES, extend, slots, get sim() { return sim; },
-  drawAt(i) { fitCanvas(); drawScene(sim.tl[Math.min(i, sim.tl.length - 1)], slots[0].motion, slots[1].motion, [], 0); } };
+window.__ore = { simulate, SAMPLES, extend, slots, newState, stepSim, totalFrames, readyFrames,
+  get sim() { return sim; }, get manual() { return manual; }, setManual(a, b) { manual = [a, b]; },
+  pressKey(k, down) { keys[k] = down; },
+  drawAt(i, ext) { const t = (ext || sim).tl; if (!t.length) return false;
+    fitCanvas(); drawScene(t[Math.min(i, t.length - 1)], slots[0].motion, slots[1].motion, [], 0); return true; } };
 
 refresh();
 initModel().catch(() => {});
