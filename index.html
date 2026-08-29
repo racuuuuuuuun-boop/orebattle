@@ -45,7 +45,7 @@
 <body>
 <header>
   <h1>オレバトル</h1>
-  <p>段階1「ぶつかり合い」 — 撮った動きどうしを戦わせます</p>
+  <p>段階1「ぶつかり合い」 — 動きも足さばきも、撮ったとおりに戦います</p>
 </header>
 <main>
   <section id="setup">
@@ -78,7 +78,7 @@
     </div>
 
     <button class="go" id="go" disabled>2人そろったら開始できます</button>
-    <p class="note" id="setupmsg">動画はこの画面の中だけで処理され、どこにも送信されません。5秒くらい・全身が映っているのがコツです。</p>
+    <p class="note" id="setupmsg">動画はこの画面の中だけで処理され、どこにも送信されません。5秒くらい・全身が映るように撮ってください。<b>画面の中で左右に動くと、そのまま前後の踏み込み・後退になります。</b></p>
     <div class="card" id="analyzing" hidden>
       <div id="status">準備中…</div>
       <progress id="prog" max="100" value="0"></progress>
@@ -119,6 +119,9 @@ const KB_K = 3.2;       // 吹っ飛びの強さ
 const COOL = 9;         // 同じ手足が続けて当たらない間隔（コマ）
 const BASE_X = 0.82;    // 立ち位置（中心からの距離）※遠いと拳が届かない
 const B_PHASE = 0.4;    // 2人目の動き出しをずらす割合（同じ動きどうしが完全同時にならないように）
+const SWAY_K = 1.0;     // 動画の横移動→前後移動への効き具合
+const MIN_GAP = 0.75;   // これ以上は近づけない（体がめり込まないように）
+const X_LIM = 1.95;     // 画面からはみ出さない上限
 const VIS = 0.3;        // 関節を信用する最低スコア
 
 const STRIKE = [15, 16, 27, 28];   // 当てる側: 両手首・両足首
@@ -131,29 +134,31 @@ const slots = [null, null];
 
 /* ===== サンプルの動き（1人でも試せるように） ===== */
 function basePose() {
-  const P = Array.from({length: 35}, () => [0, 0, 1]);
+  const P = Array.from({length: 36}, () => [0, 0, 1]);
   const set = (i, x, y) => P[i] = [x, y, 1];
   set(0, 0.05, -1.34); set(11, -0.20, -1.00); set(12, 0.20, -0.98);
   set(13, -0.34, -0.62); set(14, 0.36, -0.60); set(15, -0.30, -0.26); set(16, 0.34, -0.24);
   set(23, -0.17, 0); set(24, 0.17, 0);
   set(25, -0.19, 0.74); set(26, 0.21, 0.74); set(27, -0.19, 1.48); set(28, 0.21, 1.48);
   set(29, -0.25, 1.56); set(30, 0.27, 1.56); set(31, -0.06, 1.60); set(32, 0.08, 1.60);
+  set(35, 0, 0);   // 35番 = その時点の前後位置（足さばき）
   return P;
 }
 function bob(P, k) { for (let i = 0; i < 33; i++) if (P[i]) P[i][1] += k; }
 
-function samplePunch() {       // ストレート（1秒に1発）
+function samplePunch() {       // 踏み込みストレート（打つ瞬間に前に出る）
   const out = [];
   for (let i = 0; i < 90; i++) {
     const P = basePose(), e = Math.pow(Math.max(0, Math.sin((i % 30) / 30 * Math.PI)), 2);
     P[16] = [0.30 + 0.98 * e, -0.92 - 0.06 * e, 1];
     P[14] = [0.28 + 0.46 * e, -0.80 + 0.02 * e, 1];
     P[15] = [0.16, -1.02, 1]; P[13] = [-0.12, -0.72, 1];
+    P[35] = [0.42 * e, 0, 1];
     bob(P, 0.03 * e); out.push(P);
   }
   return out;
 }
-function sampleKick() {        // 回し蹴り（1.3秒に1発）
+function sampleKick() {        // 回し蹴り（軽く踏み込む）
   const out = [];
   for (let i = 0; i < 80; i++) {
     const P = basePose(), e = Math.pow(Math.max(0, Math.sin((i % 40) / 40 * Math.PI)), 2);
@@ -162,11 +167,12 @@ function sampleKick() {        // 回し蹴り（1.3秒に1発）
     P[30] = [0.27 + 1.10 * e, 1.56 - 2.30 * e, 1];
     P[32] = [0.08 + 1.20 * e, 1.60 - 2.26 * e, 1];
     P[16] = [0.10 - 0.20 * e, -0.30, 1]; P[15] = [-0.34, -0.34, 1];
+    P[35] = [0.22 * e, 0, 1];
     bob(P, 0.10 * e); out.push(P);
   }
   return out;
 }
-function sampleRush() {        // 連打（1秒に3発）
+function sampleRush() {        // 前進連打（詰めて離れてを繰り返す）
   const out = [];
   for (let i = 0; i < 90; i++) {
     const P = basePose();
@@ -176,14 +182,29 @@ function sampleRush() {        // 連打（1秒に3発）
     P[14] = [0.28 + 0.38 * eR, -0.78, 1];
     P[15] = [0.24 + 0.80 * eL, -0.94 - 0.04 * eL, 1];
     P[13] = [0.20 + 0.38 * eL, -0.80, 1];
+    P[35] = [0.55 * Math.sin(i / 90 * Math.PI * 2), 0, 1];
+    out.push(P);
+  }
+  return out;
+}
+function sampleOut() {         // 下がり牽制（間合いの外から差し込む）
+  const out = [];
+  for (let i = 0; i < 100; i++) {
+    const P = basePose();
+    const e = Math.pow(Math.max(0, Math.sin((i % 34) / 34 * Math.PI)), 2);
+    P[16] = [0.30 + 1.06 * e, -0.95, 1];
+    P[14] = [0.28 + 0.50 * e, -0.80, 1];
+    P[15] = [0.16, -1.02, 1]; P[13] = [-0.12, -0.72, 1];
+    P[35] = [-0.30 + 0.55 * Math.cos(i / 100 * Math.PI * 2), 0, 1];
     out.push(P);
   }
   return out;
 }
 const SAMPLES = [
-  {id: "punch", name: "サンプル: ストレート", gen: samplePunch},
-  {id: "kick",  name: "サンプル: 回し蹴り",   gen: sampleKick},
-  {id: "rush",  name: "サンプル: 連打",       gen: sampleRush}
+  {id: "punch", name: "サンプル: 踏み込みストレート", gen: samplePunch},
+  {id: "kick",  name: "サンプル: 回し蹴り",           gen: sampleKick},
+  {id: "rush",  name: "サンプル: 前進連打",           gen: sampleRush},
+  {id: "out",   name: "サンプル: 下がり牽制",         gen: sampleOut}
 ];
 
 /* ===== 動画から動きを取り込む ===== */
@@ -208,20 +229,32 @@ const yieldUI = () => new Promise(r => setTimeout(r, 0));
 
 // 撮った姿勢を「腰が原点・胴体1つ分=1」に揃える（体格と映り方の差を消す）
 function normalize(raw) {
-  const out = []; let last = null;
+  const poses = [], hxs = [], torsos = [];
+  let last = null, lastHx = null;
   for (const lm of raw) {
-    if (!lm) { out.push(last); continue; }
+    if (!lm) { poses.push(last); hxs.push(lastHx); continue; }
     const hL = lm[23], hR = lm[24], sL = lm[11], sR = lm[12];
-    if (hL[2] < VIS || hR[2] < VIS || sL[2] < VIS || sR[2] < VIS) { out.push(last); continue; }
+    if (hL[2] < VIS || hR[2] < VIS || sL[2] < VIS || sR[2] < VIS) { poses.push(last); hxs.push(lastHx); continue; }
     const hx = (hL[0] + hR[0]) / 2, hy = (hL[1] + hR[1]) / 2;
     const sx = (sL[0] + sR[0]) / 2, sy = (sL[1] + sR[1]) / 2;
     const torso = Math.hypot(sx - hx, sy - hy) || 0.001;
-    const f = lm.map(p => [(p[0] - hx) / torso, (p[1] - hy) / torso, p[2]]);
-    out.push(f); last = f;
+    poses.push(lm.map(p => [(p[0] - hx) / torso, (p[1] - hy) / torso, p[2]]));
+    hxs.push(hx); torsos.push(torso);
+    last = poses[poses.length - 1]; lastHx = hx;
   }
-  const first = out.find(f => f);
+  const first = poses.find(p => p);
   if (!first) return null;
-  return out.map(f => f || first);
+  // 前後移動 = 腰の横位置の、その動画の平均からのずれ（胴体1つ分を単位にする）
+  const valid = hxs.filter(v => v != null);
+  const meanHx = valid.reduce((a, b) => a + b, 0) / Math.max(1, valid.length);
+  const T = torsos.slice().sort((a, b) => a - b)[Math.floor(torsos.length / 2)] || 0.001;
+  const firstHx = valid.length ? valid[0] : 0;
+  return poses.map((pp, i) => {
+    const q = (pp || first).map(x => x.slice());
+    const hx = hxs[i] == null ? firstHx : hxs[i];
+    q[35] = [Math.max(-1.2, Math.min(1.2, (hx - meanHx) / T)), 0, 1];
+    return q;
+  });
 }
 
 async function analyzeVideo(file, slot) {
@@ -262,16 +295,18 @@ async function analyzeVideo(file, slot) {
     $("setupmsg").innerHTML = '<span style="color:var(--warn)">人の姿を見つけられませんでした。明るい場所で、全身がカメラに入るように撮ってみてください。</span>';
     refresh(); return;
   }
-  $("setupmsg").textContent = "動画はこの画面の中だけで処理され、どこにも送信されません。5秒くらい・全身が映っているのがコツです。";
+  $("setupmsg").innerHTML = "動画はこの画面の中だけで処理され、どこにも送信されません。5秒くらい・全身が映るように撮ってください。<b>画面の中で左右に動くと、そのまま前後の踏み込み・後退になります。</b>";
   slots[slot] = { name: "自分の動画（" + dur.toFixed(1) + "秒）", motion: motion.map(extend), rate: Math.round(detected / total * 100), secs: secs.toFixed(1) };
   refresh();
 }
 
 /* ===== 試合の計算（同じ入力なら必ず同じ結果になるように作る） ===== */
-function extend(P) {                     // 胸(33)と腹(34)の点をその場で作る
-  const q = P.map(p => p.slice());
+function extend(P) {                     // 胸(33)・腹(34)を作り、足さばき(35)を保証する
+  const q = [];
+  for (let i = 0; i < 36; i++) q[i] = P[i] ? P[i].slice() : [0, 0, 0];
   q[33] = [(q[11][0] + q[12][0]) / 2, (q[11][1] + q[12][1]) / 2, 1];
   q[34] = [0, 0, 1];
+  if (!P[35]) q[35] = [0, 0, 1];
   return q;
 }
 function simulate(mA, mB) {
@@ -279,23 +314,32 @@ function simulate(mA, mB) {
     { m: mA, base: -BASE_X, dir: 1,  off: 0, hp: HP0, cd: {}, ph: 0 },
     { m: mB, base:  BASE_X, dir: -1, off: 0, hp: HP0, cd: {}, ph: Math.floor(mB.length * B_PHASE) }
   ];
-  const pos = (i, j, f) => {
-    const g = F[i], P = g.m[(f + g.ph) % g.m.length];
-    return [g.base + g.off + P[j][0] * g.dir, P[j][1]];
+  const frameOf = (g, f) => g.m[(f + g.ph) % g.m.length];
+  const centersAt = f => {                     // 立ち位置 = 足さばき + 吹っ飛び。近すぎたら押し戻す
+    let xA = F[0].base + F[0].off + frameOf(F[0], f)[35][0] * SWAY_K * F[0].dir;
+    let xB = F[1].base + F[1].off + frameOf(F[1], f)[35][0] * SWAY_K * F[1].dir;
+    const gap = xB - xA;
+    if (gap < MIN_GAP) { const c = (MIN_GAP - gap) / 2; xA -= c; xB += c; }
+    return [Math.max(-X_LIM, Math.min(X_LIM, xA)), Math.max(-X_LIM, Math.min(X_LIM, xB))];
   };
+  const pos = (i, j, f, cx) => [cx + frameOf(F[i], f)[j][0] * F[i].dir, frameOf(F[i], f)[j][1]];
+  // 速さは「体に対する手足の速さ」で測る（歩いて近づいただけでは当たらないように）
+  const localP = (i, j, f) => { const P = frameOf(F[i], f); return [P[j][0] * F[i].dir, P[j][1]]; };
   const tl = []; const N = MAX_SEC * FPS;
   for (let f = 0; f < N; f++) {
+    const C = centersAt(f);
     const hits = [];
     for (let s = 0; s < 2; s++) {
       const t = 1 - s;
       if (F[0].hp <= 0 || F[1].hp <= 0) break;
       for (const sp of STRIKE) {
         if ((F[s].cd[sp] || 0) > f) continue;
-        const cur = pos(s, sp, f), prv = pos(s, sp, Math.max(0, f - 1));
-        const spd = Math.hypot(cur[0] - prv[0], cur[1] - prv[1]);
+        const cl = localP(s, sp, f), pl = localP(s, sp, Math.max(0, f - 1));
+        const spd = Math.hypot(cl[0] - pl[0], cl[1] - pl[1]);
         if (spd < MIN_SPD) continue;
+        const cur = pos(s, sp, f, C[s]);
         for (const tz of TARGET) {
-          const tp = pos(t, tz, f);
+          const tp = pos(t, tz, f, C[t]);
           if (Math.hypot(cur[0] - tp[0], cur[1] - tp[1]) > HIT_R) continue;
           const dmg = Math.max(1, Math.min(DMG_MAX, Math.round(spd * DMG_K)));
           F[t].hp = Math.max(0, F[t].hp - dmg);
@@ -307,7 +351,7 @@ function simulate(mA, mB) {
       }
     }
     for (const g of F) { g.off *= 0.90; g.off = Math.max(-1.25, Math.min(1.25, g.off)); }
-    tl.push({ f, offA: F[0].off, offB: F[1].off, hpA: F[0].hp, hpB: F[1].hp, hits });
+    tl.push({ f, xA: C[0], xB: C[1], hpA: F[0].hp, hpB: F[1].hp, hits });
     if (F[0].hp <= 0 || F[1].hp <= 0) break;
   }
   const hpA = F[0].hp, hpB = F[1].hp;
@@ -346,8 +390,8 @@ function drawScene(st, mA, mB, fx, shake) {
   const gy = HIPY + 1.62 * SCALE;
   ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke();
   const phB = Math.floor(mB.length * B_PHASE);
-  drawFigure(mA[st.f % mA.length], st.offA - BASE_X, 1,  "#4fd1ff", shake);
-  drawFigure(mB[(st.f + phB) % mB.length], st.offB + BASE_X, -1, "#ff8a5c", shake);
+  drawFigure(mA[st.f % mA.length], st.xA, 1,  "#4fd1ff", shake);
+  drawFigure(mB[(st.f + phB) % mB.length], st.xB, -1, "#ff8a5c", shake);
   for (const e of fx) {
     const a = e.life / 14;
     ctx.strokeStyle = "rgba(255,255,255," + a + ")"; ctx.lineWidth = 3;
@@ -407,12 +451,13 @@ function showVerify() {
   const v = $("verify"); v.hidden = false;
   const a = slots[0], b = slots[1];
   const src = s => s.rate === undefined ? "サンプル" : "検出" + s.rate + "%・解析" + s.secs + "秒";
+  const swayW = m => { let lo = 9, hi = -9; for (const P of m) { const v = P[35][0]; if (v < lo) lo = v; if (v > hi) hi = v; } return (hi - lo).toFixed(2); };
   const r2 = simulate(a.motion, b.motion);   // 同じ入力で2回計算し、一致するかを毎回自動チェック
   const same = r2.hpA === sim.hpA && r2.hpB === sim.hpB && r2.hits === sim.hits;
   v.innerHTML =
     "<b>検証パネル</b><br>" +
-    "1人目: " + a.name + "（" + src(a) + "・" + a.motion.length + "コマ）<br>" +
-    "2人目: " + b.name + "（" + src(b) + "・" + b.motion.length + "コマ）<br>" +
+    "1人目: " + a.name + "（" + src(a) + "・" + a.motion.length + "コマ・足さばきの幅 " + swayW(a.motion) + "）<br>" +
+    "2人目: " + b.name + "（" + src(b) + "・" + b.motion.length + "コマ・足さばきの幅 " + swayW(b.motion) + "）<br>" +
     "試合: <b>" + (sim.tl.length / FPS).toFixed(1) + "秒</b> ／ 命中 <b>" + sim.hits + "回</b> ／ 残り体力 <b>" + sim.hpA + "</b> 対 <b>" + sim.hpB + "</b><br>" +
     "再現性チェック（同じ入力→同じ結果か）: " + (same ? '<span class="g">◎ 一致</span>' : '<span class="w">⚠ 不一致（要修正）</span>') +
     " ／ 処理: " + delegate +
@@ -470,7 +515,8 @@ $("back").addEventListener("click", () => { cancelAnimationFrame(raf); $("battle
 window.addEventListener("resize", () => { if (!$("battle").hidden) fitCanvas(); });
 
 // 検証用フック（開発時のみ・アプリの動作には関与しない）
-window.__ore = { simulate, SAMPLES, extend, slots, get sim() { return sim; } };
+window.__ore = { simulate, SAMPLES, extend, slots, get sim() { return sim; },
+  drawAt(i) { fitCanvas(); drawScene(sim.tl[Math.min(i, sim.tl.length - 1)], slots[0].motion, slots[1].motion, [], 0); } };
 
 refresh();
 initModel().catch(() => {});
